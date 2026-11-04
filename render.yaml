@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: english-hub
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22
+      - key: APP_NAME
+        value: English Hub
+      - key: MAX_UPLOAD_MB
+        value: "15"
+      - key: DEMO_MODE
+        value: "false"
+      - key: SEED_DEMO
+        value: "false"
+      - key: DATABASE_URL
+        sync: false # Cole a connection string do Neon no painel do Render.
+      - key: SETUP_KEY
+        sync: false # Opcional, mas recomendado: protege a criação do primeiro professor.

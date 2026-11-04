@@ -1,0 +1,29 @@
+{
+  "name": "english-hub",
+  "version": "1.0.0",
+  "description": "Plataforma de aulas de inglês com Neon PostgreSQL, login por perfil e acompanhamento de progresso.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "demo": "DEMO_MODE=true SEED_DEMO=true node server.js",
+    "db:init": "node scripts/init-db.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check server.js && node --check db.js && node --check public/app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "express": "^4.22.3",
+    "express-rate-limit": "^8.7.3",
+    "helmet": "^8.3.0",
+    "multer": "^2.5.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15"
+  }
+}
