@@ -10,7 +10,18 @@
   <script defer src="/app.js"></script>
 </head>
 <body>
-  <div id="app" class="app-shell" aria-live="polite"></div>
+  <div id="app" class="app-shell" aria-live="polite">
+    <!-- Estado inicial: evita tela em branco enquanto o app (ou o servidor) acorda. -->
+    <div class="auth-wrap">
+      <div class="card auth-card auth-loading">
+        <div class="brand"><span class="brand-mark">E</span><span>English Hub</span></div>
+        <h1>Carregando…</h1>
+        <p class="muted" id="boot-status">Conectando ao servidor…</p>
+        <div class="spinner" aria-hidden="true"></div>
+        <noscript><p class="error">Ative o JavaScript no navegador para usar o English Hub.</p></noscript>
+      </div>
+    </div>
+  </div>
   <div id="modal" class="modal-backdrop" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <button class="modal-close" type="button" data-close-modal aria-label="Fechar">×</button>

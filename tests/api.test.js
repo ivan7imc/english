@@ -48,6 +48,7 @@ test('English Hub API', async (t) => {
     const boot = await req('/api/bootstrap');
     assert.equal(boot.status, 200);
     assert.equal(boot.data.needsSetup, true);
+    assert.equal(boot.data.setupAllowed, true);
   });
 
   await t.test('setup do professor exige chave em produção-like e cria conta', async () => {
@@ -57,6 +58,13 @@ test('English Hub API', async (t) => {
     assert.equal(ok.status, 201);
     assert.equal(ok.data.user.role, 'teacher');
     teacherToken = ok.data.token;
+  });
+
+  await t.test('bootstrap depois do setup: sem setup pendente e setup liberado', async () => {
+    const boot = await req('/api/bootstrap');
+    assert.equal(boot.status, 200);
+    assert.equal(boot.data.needsSetup, false);
+    assert.equal(boot.data.setupAllowed, true);
   });
 
   await t.test('login e sessão', async () => {

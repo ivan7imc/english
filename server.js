@@ -291,7 +291,10 @@ export function createApp() {
   }));
 
   app.get('/api/bootstrap', asyncHandler(async (req, res) => {
-    res.json({ appName: APP_NAME, demo: isDemo, needsSetup: !(await teacherExists()), maxUploadMB: MAX_UPLOAD_MB });
+    const needsSetup = !(await teacherExists());
+    // Em produção o setup pela web só funciona se SETUP_KEY estiver definida.
+    const setupAllowed = !needsSetup || !(isProd && !isDemo && !process.env.SETUP_KEY);
+    res.json({ appName: APP_NAME, demo: isDemo, needsSetup, setupAllowed, maxUploadMB: MAX_UPLOAD_MB });
   }));
 
   app.post('/api/setup', loginLimiter, asyncHandler(async (req, res) => {
