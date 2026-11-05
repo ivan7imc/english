@@ -102,8 +102,17 @@ table { width: 100%; border-collapse: collapse; min-width: 640px; }
 th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 th { background: #fafbff; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 tr:last-child td { border-bottom: 0; }
-.auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(1200px 600px at 10% -10%, #e0e7ff, transparent), var(--bg); }
+.auth-wrap { min-height: 100vh; min-height: 100svh; display: grid; place-items: center; align-content: center; padding: 24px; background: radial-gradient(1200px 600px at 10% -10%, #e0e7ff, transparent), var(--bg); }
 .auth-card { width: 100%; max-width: 460px; }
+.auth-loading .spinner { margin-top: 6px; }
+.notice code { background: rgba(23,32,51,.07); padding: 1px 5px; border-radius: 6px; font-size: 13px; }
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--primary);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
 .auth-card h1 { margin: 0 0 6px; letter-spacing: -.03em; }
 .auth-card .brand { margin-bottom: 18px; }
 .notice { border-radius: 12px; padding: 12px 14px; background: var(--primary-soft); color: var(--primary-dark); font-size: 14px; margin: 12px 0; }

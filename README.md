@@ -127,6 +127,19 @@ Opção B — Blueprint:
 | `SEED_DEMO` | Não | `true` cria contas e aulas de exemplo no modo demo. |
 | `PG_POOL_MAX` | Não | Máximo de conexões do pool, padrão `5`. |
 
+## Problemas na tela de login (diagnóstico rápido)
+
+| O que aparece | Causa provável | O que fazer |
+|---|---|---|
+| Tela em branco ou “Render – Application loading” (fundo escuro com arte ASCII) | O serviço gratuito do Render dorme após ~15 min sem acesso e leva de 30 s a 1 min para acordar. | Aguarde; a tela agora mostra **“Carregando…”** e tenta reconectar sozinha. Para evitar a espera, o workflow `.github/workflows/keep-alive.yml` faz um ping a cada 10 min (ative também `APP_URL` em *Settings → Variables* se a URL mudar). |
+| “Não foi possível carregar” com botão **Tentar novamente** | Servidor acordando, indisponível ou sem rede. | Clique em **Tentar novamente**; o erro agora aparece em texto claro em vez de “Erro 502”. |
+| “Configuração inicial protegida…” | Nenhum professor cadastrado e `SETUP_KEY` ausente no Render. | Defina `SETUP_KEY` (ou `TEACHER_EMAIL`/`TEACHER_PASSWORD`) e reinicie o serviço. A tela de setup agora explica isso antes de você enviar o formulário. |
+| “Muitas tentativas. Aguarde alguns minutos.” | Limite de 30 tentativas de login por 15 min por IP. | Aguarde ou use outra rede. |
+| “E-mail ou senha incorretos.” | Credencial inválida, ou aluno desativado. | Confira com o professor; ele pode redefinir a senha em **Alunos**. |
+
+> A tela de login também deixou de quebrar quando o navegador bloqueia `localStorage`
+> (modo privado, webview de Instagram/WhatsApp) — antes isso deixava a página totalmente em branco.
+
 ## Testes
 
 ```bash

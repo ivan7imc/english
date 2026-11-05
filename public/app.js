@@ -9,9 +9,17 @@
   const modalContent = $('#modal-content');
   const toastEl = $('#toast');
 
+  // localStorage pode lançar (modo privado, storage bloqueado em webview) — nunca deixe isso quebrar a tela.
+  const store = {
+    get(key) { try { return window.localStorage.getItem(key); } catch { return null; } },
+    set(key, value) { try { window.localStorage.setItem(key, value); } catch { /* sem storage */ } },
+    remove(key) { try { window.localStorage.removeItem(key); } catch { /* sem storage */ } }
+  };
+  const parseStored = (raw) => { try { return raw ? JSON.parse(raw) : null; } catch { return null; } };
+
   const state = {
-    token: localStorage.getItem('eh_token') || '',
-    user: JSON.parse(localStorage.getItem('eh_user') || 'null'),
+    token: store.get('eh_token') || '',
+    user: parseStored(store.get('eh_user')),
     bootstrap: null,
     tab: 'lessons',
     lessons: [],
@@ -38,7 +46,10 @@
     toastEl._t = setTimeout(() => { toastEl.hidden = true; }, 3800);
   }
 
-  async function api(path, { method = 'GET', body, headers = {} } = {}) {
+  // Erro temporário: servidor acordando (plano gratuito do Render) ou rede instável.
+  class TransientError extends Error {}
+
+  async function api(path, { method = 'GET', body, headers = {}, timeout = 25000 } = {}) {
     const opts = { method, headers: { ...headers } };
     if (state.token) opts.headers.Authorization = `Bearer ${state.token}`;
     if (body instanceof FormData) opts.body = body;
@@ -46,29 +57,65 @@
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
-    const res = await fetch(path, opts);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    let res;
+    try {
+      res = await fetch(path, { ...opts, signal: controller.signal });
+    } catch {
+      throw new TransientError('Não foi possível falar com o servidor. Verifique sua conexão e tente novamente.');
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const raw = await res.text().catch(() => '');
     let data = null;
-    try { data = await res.json(); } catch { /* sem corpo */ }
+    if (raw) { try { data = JSON.parse(raw); } catch { data = null; } }
+
     if (res.status === 401 && !['/api/login', '/api/setup'].includes(path)) {
       clearSession();
       renderAuth();
       throw new Error(data?.error || 'Sessão expirada. Entre novamente.');
     }
-    if (!res.ok) throw new Error(data?.error || `Erro ${res.status}`);
+    // Enquanto a instância acorda, o Render responde 502/503 com uma página HTML
+    // (não JSON). Sem este tratamento a tela de login quebrava com "Erro 502".
+    if (!res.ok || !data) {
+      if ([502, 503, 504].includes(res.status) || (!data && res.ok)) {
+        throw new TransientError('O servidor está acordando. Aguarde alguns segundos — isso só acontece na primeira visita.');
+      }
+      if (res.status === 429) throw new Error(data?.error || 'Muitas tentativas. Aguarde alguns minutos e tente de novo.');
+      throw new Error(data?.error || `Erro ${res.status} ao acessar o servidor.`);
+    }
     return data;
+  }
+
+  async function apiWithRetry(path, options = {}, { attempts = 4, onRetry } = {}) {
+    let lastError;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        return await api(path, options);
+      } catch (err) {
+        lastError = err;
+        if (!(err instanceof TransientError) || attempt === attempts - 1) throw err;
+        if (onRetry) onRetry(attempt + 1, attempts);
+        await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
+      }
+    }
+    throw lastError;
   }
 
   function setSession(data) {
     state.token = data.token;
     state.user = data.user;
-    localStorage.setItem('eh_token', data.token);
-    localStorage.setItem('eh_user', JSON.stringify(data.user));
+    store.set('eh_token', data.token);
+    store.set('eh_user', JSON.stringify(data.user));
   }
   function clearSession() {
     state.token = '';
     state.user = null;
-    localStorage.removeItem('eh_token');
-    localStorage.removeItem('eh_user');
+    store.remove('eh_token');
+    store.remove('eh_user');
   }
 
   function openModal(html) {
@@ -102,6 +149,9 @@
   function renderAuth(message = '') {
     const b = state.bootstrap || { appName: 'English Hub', demo: false, needsSetup: false };
     const isSetup = b.needsSetup;
+    // needsSetup + sem SETUP_KEY em produção: o formulário nunca funcionaria,
+    // então mostramos a instrução em vez de deixar o usuário levar um 403.
+    const setupBlocked = isSetup && b.setupAllowed === false;
     app.innerHTML = `
       <div class="auth-wrap">
         <div class="card auth-card">
@@ -113,14 +163,17 @@
               <button class="btn small secondary" data-action="demo-fill" data-email="professor@demo.com" data-password="Professor123!">Preencher professor</button>
               <button class="btn small secondary" data-action="demo-fill" data-email="aluno@demo.com" data-password="Aluno123!">Preencher aluno</button>
             </div></div>` : ''}
-          <form id="${isSetup ? 'setup-form' : 'login-form'}">
+          ${setupBlocked ? `<div class="notice warn">
+            <strong>Configuração inicial bloqueada.</strong> Nenhum professor foi cadastrado e o servidor está sem <code>SETUP_KEY</code>.
+            Defina <code>SETUP_KEY</code> (ou <code>TEACHER_EMAIL</code> / <code>TEACHER_PASSWORD</code>) nas variáveis de ambiente e reinicie o serviço.
+          </div>` : `<form id="${isSetup ? 'setup-form' : 'login-form'}">
             ${isSetup ? `<div class="field"><label for="name">Nome</label><input id="name" name="name" required minlength="2" maxlength="120" autocomplete="name"></div>` : ''}
-            <div class="field"><label for="email">E-mail</label><input id="email" name="email" type="email" required autocomplete="username"></div>
+            <div class="field"><label for="email">E-mail</label><input id="email" name="email" type="email" required autocomplete="username" autocapitalize="none" spellcheck="false" autofocus></div>
             <div class="field"><label for="password">Senha</label><input id="password" name="password" type="password" required minlength="8" autocomplete="${isSetup ? 'new-password' : 'current-password'}"></div>
             ${isSetup ? `<div class="field"><label for="setupKey">Chave de configuração <span class="muted">(opcional)</span></label><input id="setupKey" name="setupKey" type="password" autocomplete="off"></div>` : ''}
-            <button class="btn" type="submit" style="width:100%">${isSetup ? 'Criar professor e entrar' : 'Entrar'}</button>
+            <button class="btn" type="submit" id="auth-submit" style="width:100%">${isSetup ? 'Criar professor e entrar' : 'Entrar'}</button>
             <p class="error" id="auth-error" hidden></p>
-          </form>
+          </form>`}
           ${message ? `<p class="error">${esc(message)}</p>` : ''}
         </div>
       </div>`;
@@ -479,6 +532,8 @@
     try {
       if (action === 'reload') {
         location.reload();
+      } else if (action === 'retry-boot') {
+        await init();
       } else if (action === 'demo-fill') {
         $('#email').value = el.dataset.email;
         $('#password').value = el.dataset.password;
@@ -486,7 +541,9 @@
         try { await api('/api/logout', { method: 'POST' }); } catch { /* ignora */ }
         clearSession();
         state.currentLesson = null;
-        state.bootstrap = await api('/api/bootstrap');
+        try {
+          state.bootstrap = await apiWithRetry('/api/bootstrap', {}, { attempts: 3 });
+        } catch { /* mantém o bootstrap anterior */ }
         renderAuth();
       } else if (action === 'nav-tab') {
         state.tab = el.dataset.tab;
@@ -567,8 +624,15 @@
     e.preventDefault();
     const fd = new FormData(form);
     const obj = Object.fromEntries(fd.entries());
+    const isAuthForm = form.id === 'login-form' || form.id === 'setup-form';
+    const submitBtn = isAuthForm ? form.querySelector('#auth-submit') : null;
+    const submitLabel = submitBtn ? submitBtn.textContent : '';
     try {
       state.busy = true;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = form.id === 'login-form' ? 'Entrando…' : 'Criando conta…';
+      }
       if (form.id === 'login-form') {
         const data = await api('/api/login', { method: 'POST', body: { email: obj.email, password: obj.password } });
         setSession(data);
@@ -624,34 +688,83 @@
         toast('Senha alterada.');
       }
     } catch (err) {
-      if (form.id === 'login-form' || form.id === 'setup-form') {
+      if (isAuthForm) {
         const errEl = $('#auth-error');
         if (errEl) { errEl.textContent = err.message; errEl.hidden = false; }
+        else toast(err.message, true);
       } else toast(err.message, true);
     } finally {
       state.busy = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = submitLabel;
+      }
     }
+  });
+
+  document.addEventListener('input', (e) => {
+    const errEl = $('#auth-error');
+    if (errEl && !errEl.hidden && e.target.closest('#login-form, #setup-form')) errEl.hidden = true;
   });
 
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
 
+  function bootStatus(message) {
+    const el = document.getElementById('boot-status');
+    if (el) el.textContent = message;
+  }
+
+  function renderBootSkeleton() {
+    app.innerHTML = `
+      <div class="auth-wrap">
+        <div class="card auth-card auth-loading">
+          <div class="brand"><span class="brand-mark">E</span><span>English Hub</span></div>
+          <h1>Carregando…</h1>
+          <p class="muted" id="boot-status">Conectando ao servidor…</p>
+          <div class="spinner" aria-hidden="true"></div>
+        </div>
+      </div>`;
+  }
+
+  function renderBootError(message) {
+    app.innerHTML = `
+      <div class="auth-wrap">
+        <div class="card auth-card">
+          <div class="brand"><span class="brand-mark">E</span><span>English Hub</span></div>
+          <h1>Não foi possível carregar</h1>
+          <p class="error">${esc(message)}</p>
+          <p class="muted small">Se o site ficou um tempo sem uso, o servidor gratuito pode levar até um minuto para responder. Tente novamente em instantes.</p>
+          <button class="btn" data-action="retry-boot" style="width:100%">Tentar novamente</button>
+        </div>
+      </div>`;
+  }
+
   async function init() {
+    if (!document.getElementById('boot-status')) renderBootSkeleton();
+    bootStatus('Conectando ao servidor…');
     try {
-      state.bootstrap = await api('/api/bootstrap');
+      state.bootstrap = await apiWithRetry('/api/bootstrap', {}, {
+        attempts: 5,
+        onRetry: (attempt) => bootStatus(attempt >= 2
+          ? 'O servidor está acordando… isso pode levar até um minuto na primeira visita.'
+          : 'Reconectando…')
+      });
       if (state.token) {
         try {
           const { user } = await api('/api/me');
           state.user = user;
-          localStorage.setItem('eh_user', JSON.stringify(user));
+          store.set('eh_user', JSON.stringify(user));
           if (user.role === 'teacher') await loadTeacher(); else await loadStudent();
           return render();
-        } catch {
+        } catch (err) {
+          // Só descarta a sessão quando o servidor confirma que ela não vale mais.
+          if (err instanceof TransientError) throw err;
           clearSession();
         }
       }
       renderAuth();
     } catch (err) {
-      app.innerHTML = `<div class="auth-wrap"><div class="card auth-card"><h1>Não foi possível carregar</h1><p class="error">${esc(err.message)}</p><button class="btn" data-action="reload">Tentar novamente</button></div></div>`;
+      renderBootError(err.message);
     }
   }
 

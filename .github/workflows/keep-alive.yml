@@ -1,0 +1,32 @@
+name: Manter o app acordado
+
+# O plano gratuito do Render "dorme" após ~15 minutos sem acesso. A primeira
+# visita depois disso mostra a tela de carregamento do Render (ou um erro) em
+# vez da tela de login. Este workflow faz um ping leve a cada 10 minutos.
+#
+# Opcional: defina a variável de repositório APP_URL (Settings > Secrets and
+# variables > Actions > Variables) se a URL do serviço mudar.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /api/health
+        env:
+          APP_URL: ${{ vars.APP_URL || 'https://english-hub-fwzi.onrender.com' }}
+        run: |
+          if curl -fsS --max-time 90 --retry 3 --retry-delay 10 "$APP_URL/api/health"; then
+            echo "OK — app acordado."
+          else
+            echo "Sem resposta agora (o serviço pode estar iniciando)."
+          fi
